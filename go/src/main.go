@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"strconv"
 	"strings"
@@ -117,20 +118,23 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
-	args := strings.Fields(message.CommandArguments())
-	if len(args) != 2 {
-		response := "El comando debe ser utilizado de la siguiente manera:\n/nuevopartido <tamaño> <cancha>"
+	// Obtener los parámetros de la creación del partido
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 2 {
+		response := "Para iniciar un nuevo partido, debes proporcionar la cancha y el tamaño. Ejemplo: /nuevopartido [cancha] [tamaño]"
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	tamano := args[0]
-	cancha := args[1]
+	cancha := params[0]
+	tamano := params[1]
 
-	maxPlayers := getMaxPlayersByTamano(tamano)
-	if maxPlayers == 0 {
-		response := "El tamaño especificado no es válido. Los tamaños disponibles son: futbol5, futbol9, futbol11"
+	maxPlayers, err := getMaxPlayersByTamano(tamano)
+	if err != nil {
+		response := "Error: " + err.Error()
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -211,15 +215,10 @@ func contains(slice []int, item int) bool {
 	return false
 }
 
-func getMaxPlayersByTamano(tamano string) int {
-	switch tamano {
-	case "futbol5":
-		return 10
-	case "futbol9":
-		return 18
-	case "futbol11":
-		return 22
-	default:
-		return 0
+func getMaxPlayersByTamano(tamano string) (int, error) {
+	maxPlayers, err := strconv.Atoi(tamano)
+	if err != nil || maxPlayers < 1 || maxPlayers > 15 {
+		return 0, errors.New("El tamaño especificado no es válido. Debe ser un número entre 1 y 15.")
 	}
+	return maxPlayers * 2, nil
 }

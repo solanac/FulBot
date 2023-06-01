@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
@@ -11,6 +12,9 @@ type Game struct {
 	Active      bool
 	Players     []int
 	OrganizerID int
+	Cancha      string
+	Tamano      string
+	MaxPlayers  int
 }
 
 var currentGame *Game
@@ -46,6 +50,8 @@ func main() {
 				handleNuevoPartidoCommand(bot, update.Message)
 			case "cancelarpartido":
 				handleCancelarPartidoCommand(bot, update.Message)
+			case "help":
+				handleHelpCommand(bot, update.Message)
 			default:
 				handleUnknownCommand(bot, update.Message)
 			}
@@ -93,10 +99,12 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	response += "Jugadores:\n"
 
 	for i, playerID := range currentGame.Players {
-		user := getUserInfo(bot, message, playerID)
-		response += strconv.Itoa(i+1) + ". " + user.FirstName + " " + user.LastName + "\n"
+		user := getUserInfo(bot, message.Chat.ID, playerID)
+		if user != nil {
+			response += strconv.Itoa(i+1) + ". " + user.FirstName + " " + user.LastName + "\n"
+		}
 	}
-	response += "\nTotal de jugadores: " + strconv.Itoa(playerCount)
+	response += "\nTotal de jugadores: " + strconv.Itoa(playerCount) + "/" + strconv.Itoa(currentGame.MaxPlayers)
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
@@ -109,13 +117,35 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
+	args := strings.Fields(message.CommandArguments())
+	if len(args) != 2 {
+		response := "El comando debe ser utilizado de la siguiente manera:\n/nuevopartido <tamaño> <cancha>"
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	tamano := args[0]
+	cancha := args[1]
+
+	maxPlayers := getMaxPlayersByTamano(tamano)
+	if maxPlayers == 0 {
+		response := "El tamaño especificado no es válido. Los tamaños disponibles son: futbol5, futbol9, futbol11"
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
 	currentGame = &Game{
 		Active:      true,
 		Players:     make([]int, 0),
 		OrganizerID: message.From.ID,
+		Cancha:      cancha,
+		Tamano:      tamano,
+		MaxPlayers:  maxPlayers,
 	}
 
-	response := "Se ha iniciado un nuevo partido. Puedes unirte al partido con el comando /yojuego."
+	response := "Se ha iniciado un nuevo partido de " + tamano + ". Puedes unirte al partido con el comando /yojuego."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
@@ -142,32 +172,54 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 	bot.Send(msg)
 }
 
-func handleUnknownCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	response := "Comando desconocido. Los comandos disponibles son: /yojuego, /verpartido, /nuevopartido, /cancelarpartido"
+func handleHelpCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	response := "Los comandos disponibles son:\n\n"
+	response += "/yojuego - Únete al partido activo\n"
+	response += "/verpartido - Muestra la información del partido activo\n"
+	response += "/nuevopartido <tamaño> <cancha> - Inicia un nuevo partido\n"
+	response += "/cancelarpartido - Cancela el partido activo\n"
+	response += "/help - Muestra la lista de comandos disponibles"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
 
+func handleUnknownCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	response := "Comando desconocido. Usa /help para ver la lista de comandos disponibles."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
+func getUserInfo(bot *tgbotapi.BotAPI, chatID int64, userID int) *tgbotapi.User {
+	userConfig := tgbotapi.ChatConfigWithUser{
+		ChatID: chatID,
+		UserID: userID,
+	}
+	user, err := bot.GetChatMember(userConfig)
+	if err != nil {
+		log.Printf("Error al obtener información del usuario: %v", err)
+		return nil
+	}
+	return user.User
+}
+
 func contains(slice []int, item int) bool {
-	for _, s := range slice {
-		if s == item {
+	for _, i := range slice {
+		if i == item {
 			return true
 		}
 	}
 	return false
 }
 
-func getUserInfo(bot *tgbotapi.BotAPI, message *tgbotapi.Message, userID int) *tgbotapi.User {
-	userConfig := tgbotapi.ChatConfigWithUser{
-		ChatID: message.Chat.ID,
-		UserID: userID,
+func getMaxPlayersByTamano(tamano string) int {
+	switch tamano {
+	case "futbol5":
+		return 10
+	case "futbol9":
+		return 18
+	case "futbol11":
+		return 22
+	default:
+		return 0
 	}
-
-	user, err := bot.GetChatMember(userConfig)
-	if err != nil {
-		log.Printf("Error obteniendo información del usuario: %v", err)
-		return nil
-	}
-
-	return user.User
 }

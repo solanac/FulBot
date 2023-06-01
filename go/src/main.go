@@ -8,8 +8,9 @@ import (
 )
 
 type Game struct {
-	Active  bool
-	Players []int
+	Active      bool
+	Players     []int
+	OrganizerID int
 }
 
 var currentGame *Game
@@ -43,6 +44,8 @@ func main() {
 				handleVerPartidoCommand(bot, update.Message)
 			case "nuevopartido":
 				handleNuevoPartidoCommand(bot, update.Message)
+			case "cancelarpartido":
+				handleCancelarPartidoCommand(bot, update.Message)
 			default:
 				handleUnknownCommand(bot, update.Message)
 			}
@@ -107,8 +110,9 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 	}
 
 	currentGame = &Game{
-		Active:  true,
-		Players: make([]int, 0),
+		Active:      true,
+		Players:     make([]int, 0),
+		OrganizerID: message.From.ID,
 	}
 
 	response := "Se ha iniciado un nuevo partido. Puedes unirte al partido con el comando /yojuego."
@@ -116,8 +120,30 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 	bot.Send(msg)
 }
 
+func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	if currentGame == nil || !currentGame.Active {
+		response := "No hay un partido activo en este momento."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	if currentGame.OrganizerID != message.From.ID {
+		response := "Solo el organizador del partido puede cancelarlo."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	currentGame = nil
+
+	response := "El partido ha sido cancelado por el organizador."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
 func handleUnknownCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	response := "Comando desconocido. Los comandos disponibles son: /yojuego, /verpartido, /nuevopartido"
+	response := "Comando desconocido. Los comandos disponibles son: /yojuego, /verpartido, /nuevopartido, /cancelarpartido"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }

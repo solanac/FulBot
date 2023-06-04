@@ -21,7 +21,7 @@ type Game struct {
 var currentGame *Game
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("6063474758:AAGNNDKnO3IZsIdrVxPDOgYKv_lbedCGnew")
+	bot, err := tgbotapi.NewBotAPI("BOT_TOKEN")
 	if err != nil {
 		log.Fatal(err)
 	}

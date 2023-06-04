@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 
@@ -21,7 +23,13 @@ type Game struct {
 var currentGame *Game
 
 func main() {
-	bot, err := tgbotapi.NewBotAPI("BOT_TOKEN")
+
+	config, err := readConfig("config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bot, err := tgbotapi.NewBotAPI(config.Token)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,6 +66,22 @@ func main() {
 			}
 		}
 	}
+}
+
+func readConfig(filename string) (*Config, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	err = json.NewDecoder(file).Decode(&config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {

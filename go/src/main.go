@@ -32,7 +32,7 @@ func init() {
 		"verpartido":      handleVerPartidoCommand,
 		"nuevopartido":    handleNuevoPartidoCommand,
 		"cancelarpartido": handleCancelarPartidoCommand,
-		"help":            handleHelpCommand,
+		"ayuda":           handleayudaCommand,
 	}
 }
 
@@ -211,19 +211,19 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 	bot.Send(msg)
 }
 
-func handleHelpCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	response := "Los comandos disponibles son:\n\n"
 	response += "/yojuego - Únete al partido activo\n"
 	response += "/verpartido - Muestra la información del partido activo\n"
 	response += "/nuevopartido <tamaño> <cancha> - Inicia un nuevo partido\n"
 	response += "/cancelarpartido - Cancela el partido activo\n"
-	response += "/help - Muestra la lista de comandos disponibles"
+	response += "/ayuda - Muestra la lista de comandos disponibles"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
 
 func handleUnknownCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	response := "Comando desconocido. Usa /help para ver la lista de comandos disponibles."
+	response := "Comando desconocido. Usa /ayuda para ver la lista de comandos disponibles."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }

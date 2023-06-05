@@ -15,8 +15,8 @@ type Game struct {
 	Active      bool
 	Players     []int
 	OrganizerID int
-	Cancha      []string
-	Tamano      string
+	Field       []string
+	Size        string
 	MaxPlayers  int
 }
 
@@ -131,7 +131,7 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	playerCount := len(currentGame.Players)
 	response := "Partido activo:\n\n"
-	response += "Cancha: " + strings.Join(currentGame.Cancha, " ") + "\n"
+	response += "Cancha: " + strings.Join(currentGame.Field, " ") + "\n"
 	response += "Jugadores:\n"
 
 	for i, playerID := range currentGame.Players {
@@ -164,10 +164,10 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
-	tamano := params[0]
-	cancha := params[1:]
+	size := params[0]
+	field := params[1:]
 
-	maxPlayers, err := getMaxPlayersByTamano(tamano)
+	maxPlayers, err := getMaxPlayersByTamano(size)
 	if err != nil {
 		response := "Error: " + err.Error()
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
@@ -179,12 +179,12 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		Active:      true,
 		Players:     make([]int, 0),
 		OrganizerID: message.From.ID,
-		Cancha:      cancha,
-		Tamano:      tamano,
+		Field:       field,
+		Size:        size,
 		MaxPlayers:  maxPlayers,
 	}
 
-	response := "Se ha iniciado un nuevo partido de " + tamano + ". Puedes unirte al partido con el comando /yojuego."
+	response := "Se ha iniciado un nuevo partido de " + size + ". Puedes unirte al partido con el comando /yojuego."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }

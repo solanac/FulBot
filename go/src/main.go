@@ -1,10 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 
@@ -25,6 +23,8 @@ var currentGame *Game
 type CommandHandlerFunc func(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 
 var commands map[string]CommandHandlerFunc
+var config *Config
+var bot *tgbotapi.BotAPI
 
 func init() {
 	commands = map[string]CommandHandlerFunc{
@@ -34,28 +34,25 @@ func init() {
 		"cancelarpartido": handleCancelarPartidoCommand,
 		"ayuda":           handleayudaCommand,
 	}
+
+	var configError error
+	config, configError = getConfig("config.json")
+	checkForFatalError("Error loading config: ", configError)
+
+	var botError error
+	bot, botError = tgbotapi.NewBotAPI(config.Token)
+	checkForFatalError("Error initializing bot: ", botError)
+	bot.Debug = true
+	log.Printf("Connected as %s", bot.Self.UserName)
 }
 
 func main() {
-
-	config, err := readConfig("config.json")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bot, err := tgbotapi.NewBotAPI(config.Token)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bot.Debug = true
-
-	log.Printf("Conectado como %s", bot.Self.UserName)
-
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates, err := bot.GetUpdatesChan(u)
+	var channelError error
+	updates, channelError := bot.GetUpdatesChan(u)
+	checkForFatalError("Error opening bot channel: ", channelError)
 
 	for update := range updates {
 		if update.Message == nil {
@@ -78,20 +75,10 @@ func main() {
 	}
 }
 
-func readConfig(filename string) (*Config, error) {
-	file, err := os.Open(filename)
+func checkForFatalError(message string, err error) {
 	if err != nil {
-		return nil, err
+		log.Fatal(message, err)
 	}
-	defer file.Close()
-
-	var config Config
-	err = json.NewDecoder(file).Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
 }
 
 func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -158,7 +145,7 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 	params := strings.Split(args, " ")
 
 	if len(params) < 2 {
-		response := "Para iniciar un nuevo partido, debes proporcionar la cancha y el tamaño. Ejemplo: /nuevopartido [cancha] [tamaño]"
+		response := "Para iniciar un nuevo partido, debes proporcionar el tamaño de equipo y la cancha. Ejemplo: /nuevopartido [tamaño] [cancha]"
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -242,7 +229,7 @@ func getUserInfo(bot *tgbotapi.BotAPI, chatID int64, userID int) *tgbotapi.User 
 	}
 	user, err := bot.GetChatMember(userConfig)
 	if err != nil {
-		log.Printf("Error al obtener información del usuario: %v", err)
+		log.Printf("Error obtaining user info for: %v", err)
 		return nil
 	}
 	return user.User

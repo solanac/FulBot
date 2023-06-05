@@ -22,6 +22,20 @@ type Game struct {
 
 var currentGame *Game
 
+type CommandHandlerFunc func(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
+
+var commands map[string]CommandHandlerFunc
+
+func init() {
+	commands = map[string]CommandHandlerFunc{
+		"yojuego":         handleYoJuegoCommand,
+		"verpartido":      handleVerPartidoCommand,
+		"nuevopartido":    handleNuevoPartidoCommand,
+		"cancelarpartido": handleCancelarPartidoCommand,
+		"help":            handleHelpCommand,
+	}
+}
+
 func main() {
 
 	config, err := readConfig("config.json")
@@ -50,21 +64,17 @@ func main() {
 
 		if update.Message.IsCommand() {
 			command := update.Message.Command()
-			switch command {
-			case "yojuego":
-				handleYoJuegoCommand(bot, update.Message)
-			case "verpartido":
-				handleVerPartidoCommand(bot, update.Message)
-			case "nuevopartido":
-				handleNuevoPartidoCommand(bot, update.Message)
-			case "cancelarpartido":
-				handleCancelarPartidoCommand(bot, update.Message)
-			case "help":
-				handleHelpCommand(bot, update.Message)
-			default:
+
+			cmd, ok := commands[command]
+
+			if ok == false {
 				handleUnknownCommand(bot, update.Message)
+			} else {
+				cmd(bot, update.Message)
 			}
+
 		}
+
 	}
 }
 

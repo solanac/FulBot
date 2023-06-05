@@ -212,12 +212,19 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 }
 
 func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+
+	emojiBall := "\u26BD"
+	emojiCross := "\u2718"
+	emojiHelp := " \U0001F91A"
+	emojiCalendar := "\U0001F4C5"
+	emojiThumbsUp := "\U0001F44D"
+
 	response := "Los comandos disponibles son:\n\n"
-	response += "/yojuego - Únete al partido activo\n"
-	response += "/verpartido - Muestra la información del partido activo\n"
-	response += "/nuevopartido <tamaño> <cancha> - Inicia un nuevo partido\n"
-	response += "/cancelarpartido - Cancela el partido activo\n"
-	response += "/ayuda - Muestra la lista de comandos disponibles"
+	response += emojiThumbsUp + " /yojuego - Únete al partido activo\n"
+	response += emojiCalendar + " /verpartido - Muestra la información del partido activo\n"
+	response += emojiBall + " /nuevopartido - Inicia un nuevo partido\n"
+	response += emojiCross + " /cancelarpartido -  Cancela el partido activo\n"
+	response += emojiHelp + " /ayuda - Muestra la lista de comandos disponibles"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }

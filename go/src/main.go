@@ -15,7 +15,7 @@ type Game struct {
 	Active      bool
 	Players     []int
 	OrganizerID int
-	Cancha      string
+	Cancha      []string
 	Tamano      string
 	MaxPlayers  int
 }
@@ -131,6 +131,7 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	playerCount := len(currentGame.Players)
 	response := "Partido activo:\n\n"
+	response += "Cancha: " + strings.Join(currentGame.Cancha, " ") + "\n"
 	response += "Jugadores:\n"
 
 	for i, playerID := range currentGame.Players {
@@ -163,8 +164,8 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
-	cancha := params[0]
-	tamano := params[1]
+	tamano := params[0]
+	cancha := params[1:]
 
 	maxPlayers, err := getMaxPlayersByTamano(tamano)
 	if err != nil {

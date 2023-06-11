@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ func init() {
 		"verpartido":      handleVerPartidoCommand,
 		"nuevopartido":    handleNuevoPartidoCommand,
 		"cancelarpartido": handleCancelarPartidoCommand,
+		"darsedebaja":     handleDarseDeBajaCommand,
 		"ayuda":           handleayudaCommand,
 	}
 
@@ -81,28 +83,69 @@ func checkForFatalError(message string, err error) {
 	}
 }
 
-func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleDarseDeBajaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if currentGame == nil {
-		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
+		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+	if currentGame.Active {
+		playerId := message.From.ID
+		if !contains(currentGame.Players, playerId) {
+			response := fmt.Sprintf("No es posible darse de baja, @%s. No te encontras en el partido.", message.From.UserName)
+			msg := tgbotapi.NewMessage(message.Chat.ID, response)
+			bot.Send(msg)
+		} else {
+			currentGame.Players = remove(currentGame.Players, playerId)
+			response := fmt.Sprintf("Te has dado de baja, @%s.", message.From.UserName)
+			msg := tgbotapi.NewMessage(message.Chat.ID, response)
+			msg.ReplyToMessageID = message.MessageID
+			msg.ParseMode = "Markdown"
+			bot.Send(msg)
+		}
+
+	}
+
+}
+func remove(slice []int, value int) []int {
+	index := -1
+	for i, v := range slice {
+		if v == value {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return slice
+	}
+	return append(slice[:index], slice[index+1:]...)
+}
+
+func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	playerID := message.From.ID
+	if currentGame == nil {
+		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
 	if currentGame.Active {
-		playerID := message.From.ID
 		if !contains(currentGame.Players, playerID) {
 			currentGame.Players = append(currentGame.Players, playerID)
-			response := "Te has unido al partido. ¡Buena suerte!"
+			response := fmt.Sprintf("¡Hola @%s! Te has unido al partido. ¡Buena suerte!", message.From.UserName)
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
+			msg.ReplyToMessageID = message.MessageID
+			msg.ParseMode = "Markdown"
 			bot.Send(msg)
 		} else {
-			response := "Ya estás en el partido. ¡A jugar!"
+			response := "Ya estás en el partido . ¡A jugar!"
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
 			bot.Send(msg)
 		}
 	} else {
-		response := "El partido no está activo en este momento. Espera a que se inicie uno nuevo."
+		response := fmt.Sprintf("El partido no está activo en este momento, @%s. Espera a que se inicie uno nuevo.", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 	}
@@ -110,7 +153,7 @@ func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if currentGame == nil || !currentGame.Active {
-		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
+		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -134,7 +177,7 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if currentGame != nil && currentGame.Active {
-		response := "Ya hay un partido activo. Finalízalo antes de iniciar uno nuevo."
+		response := fmt.Sprintf("Ya hay un partido activo, @%s .Finalízalo antes de iniciar uno nuevo", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -145,7 +188,7 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 	params := strings.Split(args, " ")
 
 	if len(params) < 2 {
-		response := "Para iniciar un nuevo partido, debes proporcionar el tamaño de equipo y la cancha. Ejemplo: /nuevopartido [tamaño] [cancha]"
+		response := fmt.Sprintf("Para iniciar un nuevo partido @%s, debes proporcionar el tamaño de equipo y la cancha. Ejemplo: /nuevopartido [tamaño] [cancha]", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -178,7 +221,7 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 
 func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	if currentGame == nil || !currentGame.Active {
-		response := "No hay un partido activo en este momento."
+		response := fmt.Sprintf("No hay un partido activo en este momento, @%s.", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -193,7 +236,7 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 
 	currentGame = nil
 
-	response := "El partido ha sido cancelado por el organizador."
+	response := fmt.Sprintf("El partido ha sido cancelado por  @%s.", message.From.UserName)
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
@@ -205,12 +248,14 @@ func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	emojiHelp := " \U0001F91A"
 	emojiCalendar := "\U0001F4C5"
 	emojiThumbsUp := "\U0001F44D"
+	emojiThumbsDown := "\U0001F44E"
 
 	response := "Los comandos disponibles son:\n\n"
 	response += emojiThumbsUp + " /yojuego - Únete al partido activo\n"
 	response += emojiCalendar + " /verpartido - Muestra la información del partido activo\n"
 	response += emojiBall + " /nuevopartido - Inicia un nuevo partido\n"
 	response += emojiCross + " /cancelarpartido -  Cancela el partido activo\n"
+	response += emojiThumbsDown + " /darsedebaja - Para bajarte del partido \n"
 	response += emojiHelp + " /ayuda - Muestra la lista de comandos disponibles"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)

@@ -70,9 +70,9 @@ func main() {
 			cmd, ok := commands[command]
 
 			if ok == false {
-				handleUnknownCommand(bot, update.Message)
+				go handleUnknownCommand(bot, update.Message)
 			} else {
-				cmd(bot, update.Message)
+				go cmd(bot, update.Message)
 			}
 
 		}

@@ -14,9 +14,10 @@ type Game struct {
 	Active      bool
 	Players     []int
 	OrganizerID int
-	Field       []string
 	Size        string
 	MaxPlayers  int
+	Address     []string
+	Schedule    []string
 }
 
 var currentGame *Game
@@ -29,12 +30,14 @@ var bot *tgbotapi.BotAPI
 
 func init() {
 	commands = map[string]CommandHandlerFunc{
-		"yojuego":         handleYoJuegoCommand,
-		"verpartido":      handleVerPartidoCommand,
-		"nuevopartido":    handleNuevoPartidoCommand,
-		"cancelarpartido": handleCancelarPartidoCommand,
-		"darsedebaja":     handleDarseDeBajaCommand,
-		"ayuda":           handleayudaCommand,
+		"yojuego":          handleYoJuegoCommand,
+		"verpartido":       handleVerPartidoCommand,
+		"nuevopartido":     handleNuevoPartidoCommand,
+		"agregardireccion": handleAgregarDireccionCommand,
+		"agregarhorario":   handleAgregarHorarioCommand,
+		"cancelarpartido":  handleCancelarPartidoCommand,
+		"darsedebaja":      handleDarseDeBajaCommand,
+		"ayuda":            handleayudaCommand,
 	}
 
 	var configError error
@@ -161,7 +164,24 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	playerCount := len(currentGame.Players)
 	response := "Partido activo:\n\n"
-	response += "Cancha: " + strings.Join(currentGame.Field, " ") + "\n"
+
+	address := func() string {
+		if currentGame.Address != nil {
+			return strings.Join(currentGame.Address, " ")
+		}
+		return "<direccion>"
+	}()
+
+	schedule := func() string {
+		if currentGame.Schedule != nil {
+			return strings.Join(currentGame.Schedule, " ")
+		}
+		return "<horario>"
+	}()
+
+	response += "Cancha: " + address + "\n"
+	response += "Horario: " + schedule + "\n\n"
+
 	response += "Jugadores:\n"
 
 	for i, playerID := range currentGame.Players {
@@ -183,19 +203,17 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
-	// Obtener los parámetros de la creación del partido
 	args := message.CommandArguments()
 	params := strings.Split(args, " ")
 
-	if len(params) < 2 {
-		response := fmt.Sprintf("Para iniciar un nuevo partido @%s, debes proporcionar el tamaño de equipo y la cancha. Ejemplo: /nuevopartido [tamaño] [cancha]", message.From.UserName)
+	if len(params) < 1 {
+		response := fmt.Sprintf("Para iniciar un nuevo partido @%s, debes proporcionar el tamaño del partido. Ejemplo: /nuevopartido [tamaño]", message.From.UserName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
 	size := params[0]
-	field := params[1:]
 
 	maxPlayers, err := getMaxPlayersByTamano(size)
 	if err != nil {
@@ -209,12 +227,62 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		Active:      true,
 		Players:     make([]int, 0),
 		OrganizerID: message.From.ID,
-		Field:       field,
 		Size:        size,
 		MaxPlayers:  maxPlayers,
 	}
 
 	response := "Se ha iniciado un nuevo partido de " + size + ". Puedes unirte al partido con el comando /yojuego."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
+func handleAgregarDireccionCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	if currentGame == nil || !currentGame.Active {
+		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("@%s debes agregar una direccion!  Ejemplo: /agregardireccion [direccion]", message.From.UserName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+	address := params
+	currentGame.Address = address
+
+	response := "Se ha agregado la dirección al partido."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
+func handleAgregarHorarioCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	if currentGame == nil || !currentGame.Active {
+		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("@%s debes agregar un horario!  Ejemplo: /agregarhorario [horario]", message.From.UserName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	schedule := params
+	currentGame.Schedule = schedule
+
+	response := "Se ha agregado el horario al partido."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
@@ -244,6 +312,8 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	emojiBall := "\u26BD"
+	emojiClock := "\U0001F551"
+	emojiAddress := "\U0001F4CD"
 	emojiCross := "\u2718"
 	emojiHelp := " \U0001F91A"
 	emojiCalendar := "\U0001F4C5"
@@ -253,7 +323,9 @@ func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	response := "Los comandos disponibles son:\n\n"
 	response += emojiThumbsUp + " /yojuego - Únete al partido activo\n"
 	response += emojiCalendar + " /verpartido - Muestra la información del partido activo\n"
-	response += emojiBall + " /nuevopartido - Inicia un nuevo partido\n"
+	response += emojiBall + " /nuevopartido [tamaño] - Inicia un nuevo partido\n"
+	response += emojiClock + " /agregarhorario [horario] - Agrega un horario\n"
+	response += emojiAddress + " /agregardireccion [direccion] - Agrega una dirección\n"
 	response += emojiCross + " /cancelarpartido -  Cancela el partido activo\n"
 	response += emojiThumbsDown + " /darsedebaja - Para bajarte del partido \n"
 	response += emojiHelp + " /ayuda - Muestra la lista de comandos disponibles"

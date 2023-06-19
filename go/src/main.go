@@ -11,6 +11,7 @@ import (
 )
 
 type Game struct {
+	Id          int
 	Active      bool
 	Players     []int
 	OrganizerID int
@@ -18,9 +19,12 @@ type Game struct {
 	MaxPlayers  int
 	Address     []string
 	Schedule    []string
+	Date        []string
 }
 
-var currentGame *Game
+// We keep this in memory for now but eventually we have to set up a mariaDB
+var games map[int]Game = make(map[int]Game)
+var nextGameId = 1
 
 type CommandHandlerFunc func(bot *tgbotapi.BotAPI, message *tgbotapi.Message)
 
@@ -32,8 +36,10 @@ func init() {
 	commands = map[string]CommandHandlerFunc{
 		"yojuego":          handleYoJuegoCommand,
 		"verpartido":       handleVerPartidoCommand,
+		"verpartidos":      handleVerPartidosCommand,
 		"nuevopartido":     handleNuevoPartidoCommand,
 		"agregardireccion": handleAgregarDireccionCommand,
+		"agregarfecha":     handleAgregarFechaCommand,
 		"agregarhorario":   handleAgregarHorarioCommand,
 		"cancelarpartido":  handleCancelarPartidoCommand,
 		"darsedebaja":      handleDarseDeBajaCommand,
@@ -87,127 +93,209 @@ func checkForFatalError(message string, err error) {
 }
 
 func handleDarseDeBajaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame == nil {
-		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
+
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("Para darse de baja de un partido @%s, debes proporcionar el numero del partido. Ejemplo: /darsedebaja [numero]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
-	if currentGame.Active {
+
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s.", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	} else {
 		playerId := message.From.ID
-		if !contains(currentGame.Players, playerId) {
-			response := fmt.Sprintf("No es posible darse de baja, @%s. No te encontras en el partido.", message.From.UserName)
+		if !contains(game.Players, playerId) {
+			response := fmt.Sprintf("No es posible darse de baja, @%s. No te encontras en el partido.", message.From.FirstName)
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
 			bot.Send(msg)
 		} else {
-			currentGame.Players = remove(currentGame.Players, playerId)
-			response := fmt.Sprintf("Te has dado de baja, @%s.", message.From.UserName)
+			game.Players = remove(game.Players, playerId)
+			response := fmt.Sprintf("Te has dado de baja, @%s.", message.From.FirstName)
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
 			msg.ReplyToMessageID = message.MessageID
 			msg.ParseMode = "Markdown"
 			bot.Send(msg)
 		}
-
 	}
-
-}
-func remove(slice []int, value int) []int {
-	index := -1
-	for i, v := range slice {
-		if v == value {
-			index = i
-			break
-		}
-	}
-	if index == -1 {
-		return slice
-	}
-	return append(slice[:index], slice[index+1:]...)
 }
 
 func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	playerID := message.From.ID
-	if currentGame == nil {
-		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
+
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("Para sumarte a un partido @%s, debes proporcionar el numero del partido. Ejemplo: /yojuego [numero]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	if currentGame.Active {
-		if !contains(currentGame.Players, playerID) {
-			currentGame.Players = append(currentGame.Players, playerID)
-			response := fmt.Sprintf("¡Hola @%s! Te has unido al partido. ¡Buena suerte!", message.From.UserName)
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	} else {
+		playerID := message.From.ID
+		if !contains(game.Players, playerID) {
+			game.Players = append(game.Players, playerID)
+			games[gameId] = game
+			response := fmt.Sprintf("¡Hola @%s! Te has unido al partido. ¡Buena suerte!", message.From.FirstName)
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
 			msg.ReplyToMessageID = message.MessageID
 			msg.ParseMode = "Markdown"
 			bot.Send(msg)
 		} else {
-			response := "Ya estás en el partido . ¡A jugar!"
+			response := fmt.Sprintf("Ya estás en el partido @%s. ¡A jugar!", message.From.FirstName)
 			msg := tgbotapi.NewMessage(message.Chat.ID, response)
 			bot.Send(msg)
 		}
-	} else {
-		response := fmt.Sprintf("El partido no está activo en este momento, @%s. Espera a que se inicie uno nuevo.", message.From.UserName)
-		msg := tgbotapi.NewMessage(message.Chat.ID, response)
-		bot.Send(msg)
 	}
 }
 
 func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame == nil || !currentGame.Active {
-		response := fmt.Sprintf("No hay un partido activo en este momento, @%s. Puedes iniciar uno nuevo con /nuevopartido.", message.From.UserName)
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("Para ver un partido @%s, debes proporcionar el numero del mismo. Ejemplo: /verpartido [numero]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	playerCount := len(currentGame.Players)
-	response := "Partido activo:\n\n"
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	playerCount := len(game.Players)
+	response := "Partido pendiente:\n\n"
 
 	address := func() string {
-		if currentGame.Address != nil {
-			return strings.Join(currentGame.Address, " ")
+		if game.Address != nil {
+			return strings.Join(game.Address, " ")
 		}
 		return "<direccion>"
 	}()
 
 	schedule := func() string {
-		if currentGame.Schedule != nil {
-			return strings.Join(currentGame.Schedule, " ")
+		if game.Schedule != nil {
+			return strings.Join(game.Schedule, " ")
 		}
 		return "<horario>"
 	}()
 
+	date := func() string {
+		if game.Date != nil {
+			return strings.Join(game.Date, " ")
+		}
+		return "<fecha>"
+	}()
+
 	response += "Cancha: " + address + "\n"
-	response += "Horario: " + schedule + "\n\n"
+	response += "Horario: " + schedule + "\n"
+	response += "Fecha: " + date + "\n"
+	response += "\n"
 
 	response += "Jugadores:\n"
 
-	for i, playerID := range currentGame.Players {
+	for i, playerID := range game.Players {
 		user := getUserInfo(bot, message.Chat.ID, playerID)
 		if user != nil {
 			response += strconv.Itoa(i+1) + ". " + user.FirstName + " " + user.LastName + "\n"
 		}
 	}
-	response += "\nTotal de jugadores: " + strconv.Itoa(playerCount) + "/" + strconv.Itoa(currentGame.MaxPlayers)
+	response += "\nTotal de jugadores: " + strconv.Itoa(playerCount) + "/" + strconv.Itoa(game.MaxPlayers)
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
 
-func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame != nil && currentGame.Active {
-		response := fmt.Sprintf("Ya hay un partido activo, @%s .Finalízalo antes de iniciar uno nuevo", message.From.UserName)
+func handleVerPartidosCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+
+	if len(games) < 1 {
+		response := fmt.Sprintf("No hay partidos pendientes, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
+	response := "Proximos partidos:" + "\n\n"
+	var activeGamesTotal = 0
+	for _, game := range games {
+		if !game.Active {
+			continue
+		}
+		convertedID := strconv.Itoa(game.Id)
+		playerCount := strconv.Itoa(len(game.Players)) + "/" + strconv.Itoa(game.MaxPlayers)
+		bulletPoint := "\u2022"
+
+		response += bulletPoint + " Partido " + convertedID + ", Jugadores: " + playerCount
+		if game.Date != nil {
+			response += "\n    - Fecha: " + strings.Join(game.Date, " ")
+		}
+		if game.Schedule != nil {
+			response += "\n    - Horario: " + strings.Join(game.Schedule, " ")
+		}
+		if game.Address != nil {
+			response += "\n    - Direccion: " + strings.Join(game.Address, " ")
+		}
+		response += "\n"
+		activeGamesTotal++
+	}
+	response += "Total de partidos: " + strconv.Itoa(activeGamesTotal) + ".\n\n"
+	response += "Puedes usar /verpartido [numero de partido] para mas inforamcion."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
+func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	var game Game
+
 	args := message.CommandArguments()
 	params := strings.Split(args, " ")
 
 	if len(params) < 1 {
-		response := fmt.Sprintf("Para iniciar un nuevo partido @%s, debes proporcionar el tamaño del partido. Ejemplo: /nuevopartido [tamaño]", message.From.UserName)
+		response := fmt.Sprintf("Para iniciar un nuevo partido @%s, debes proporcionar el tamaño del partido. Ejemplo: /nuevopartido [tamaño]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
@@ -223,7 +311,8 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		return
 	}
 
-	currentGame = &Game{
+	game = Game{
+		Id:          nextGameId,
 		Active:      true,
 		Players:     make([]int, 0),
 		OrganizerID: message.From.ID,
@@ -231,80 +320,184 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 		MaxPlayers:  maxPlayers,
 	}
 
-	response := "Se ha iniciado un nuevo partido de " + size + ". Puedes unirte al partido con el comando /yojuego."
+	games[nextGameId] = game
+
+	response := "Se ha iniciado un nuevo partido de " + size + ". Puedes unirte al partido con el comando /yojuego " + strconv.Itoa(nextGameId)
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	nextGameId++
 	bot.Send(msg)
 }
 
 func handleAgregarDireccionCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame == nil || !currentGame.Active {
-		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
-		msg := tgbotapi.NewMessage(message.Chat.ID, response)
-		bot.Send(msg)
-		return
-	}
-
 	args := message.CommandArguments()
 	params := strings.Split(args, " ")
 
 	if len(params) < 1 || params[0] == "" {
-		response := fmt.Sprintf("@%s debes agregar una direccion!  Ejemplo: /agregardireccion [direccion]", message.From.UserName)
+		response := fmt.Sprintf("Para modificar un partido @%s, debes proporcionar el numero del mismo. Ejemplo: /agregardireccion [numero] [direccion]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
-	address := params
-	currentGame.Address = address
 
-	response := "Se ha agregado la dirección al partido."
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	if len(params) < 2 || params[1] == "" {
+		response := fmt.Sprintf("@%s debes agregar una direccion!  Ejemplo: /agregardireccion [numero de partido] [direccion]", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+	address := params[1:]
+	game.Address = address
+	games[gameId] = game
+
+	response := "Se ha agregado la dirección al partido " + strconv.Itoa(gameId) + "."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
 
 func handleAgregarHorarioCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame == nil || !currentGame.Active {
-		response := "No hay un partido activo en este momento. Puedes iniciar uno nuevo con /nuevopartido."
-		msg := tgbotapi.NewMessage(message.Chat.ID, response)
-		bot.Send(msg)
-		return
-	}
-
 	args := message.CommandArguments()
 	params := strings.Split(args, " ")
 
 	if len(params) < 1 || params[0] == "" {
-		response := fmt.Sprintf("@%s debes agregar un horario!  Ejemplo: /agregarhorario [horario]", message.From.UserName)
+		response := fmt.Sprintf("Para modificar un partido @%s, debes proporcionar el numero del mismo. Ejemplo: /agregarhorario [numero] [horario]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	schedule := params
-	currentGame.Schedule = schedule
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
 
-	response := "Se ha agregado el horario al partido."
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	if len(params) < 2 || params[1] == "" {
+		response := fmt.Sprintf("@%s debes agregar un horario!  Ejemplo: /agregarhorario [numero de partido] [horario]", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	schedule := params[1:]
+	game.Schedule = schedule
+	games[gameId] = game
+
+	response := "Se ha agregado el horario al partido " + strconv.Itoa(gameId) + "."
+	msg := tgbotapi.NewMessage(message.Chat.ID, response)
+	bot.Send(msg)
+}
+
+func handleAgregarFechaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("Para modificar un partido @%s, debes proporcionar el numero del mismo. Ejemplo: /agregarfecha [numero] [fecha]", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	if len(params) < 2 || params[1] == "" {
+		response := fmt.Sprintf("@%s debes agregar una fecha!  Ejemplo: /agregarfecha [numero de partido] [fecha]", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	date := params[1:]
+	game.Date = date
+	games[gameId] = game
+
+	response := "Se ha agregado la fecha al partido " + strconv.Itoa(gameId) + "."
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
 
 func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	if currentGame == nil || !currentGame.Active {
-		response := fmt.Sprintf("No hay un partido activo en este momento, @%s.", message.From.UserName)
+	args := message.CommandArguments()
+	params := strings.Split(args, " ")
+
+	if len(params) < 1 || params[0] == "" {
+		response := fmt.Sprintf("Para cancelar un partido @%s, debes proporcionar el numero del mismo. Ejemplo: /cancelarpartido [numero] [horario]", message.From.FirstName)
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	if currentGame.OrganizerID != message.From.ID {
+	gameId, err := strconv.Atoi(params[0])
+	if err != nil {
+		response := params[0] + " no es un numero de partido valido."
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	game, exists := games[gameId]
+
+	if !exists || !game.Active {
+		response := fmt.Sprintf("No hay un partido pendiente con ese numero, @%s.", message.From.FirstName)
+		msg := tgbotapi.NewMessage(message.Chat.ID, response)
+		bot.Send(msg)
+		return
+	}
+
+	if game.OrganizerID != message.From.ID {
 		response := "Solo el organizador del partido puede cancelarlo."
 		msg := tgbotapi.NewMessage(message.Chat.ID, response)
 		bot.Send(msg)
 		return
 	}
 
-	currentGame = nil
+	game.Active = false
+	games[gameId] = game
 
-	response := fmt.Sprintf("El partido ha sido cancelado por  @%s.", message.From.UserName)
+	response := fmt.Sprintf("El partido ha sido cancelado por  @%s.", message.From.FirstName)
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
 }
@@ -321,13 +514,15 @@ func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	emojiThumbsDown := "\U0001F44E"
 
 	response := "Los comandos disponibles son:\n\n"
-	response += emojiThumbsUp + " /yojuego - Únete al partido activo\n"
-	response += emojiCalendar + " /verpartido - Muestra la información del partido activo\n"
+	response += emojiThumbsUp + " /yojuego [numero de partido] - Únete a un partido\n"
+	response += emojiCalendar + " /verpartido [numero de partido] - Muestra la información de un partido\n"
+	response += emojiCalendar + " /verpartidos - Muestra la información de todos los partidos\n"
 	response += emojiBall + " /nuevopartido [tamaño] - Inicia un nuevo partido\n"
-	response += emojiClock + " /agregarhorario [horario] - Agrega un horario\n"
-	response += emojiAddress + " /agregardireccion [direccion] - Agrega una dirección\n"
-	response += emojiCross + " /cancelarpartido -  Cancela el partido activo\n"
-	response += emojiThumbsDown + " /darsedebaja - Para bajarte del partido \n"
+	response += emojiCalendar + " /agregarfecha [numero de partido] [fecha] - Agrega la fecha a un partido\n"
+	response += emojiClock + " /agregarhorario [numero de partido] [horario] - Agrega un horario a un partido\n"
+	response += emojiAddress + " /agregardireccion [numero de partido] [direccion] - Agrega una dirección a un partido\n"
+	response += emojiCross + " /cancelarpartido [numero de partido] -  Cancela un partido, solo la persona que lo creo puede cancelarlo\n"
+	response += emojiThumbsDown + " /darsedebaja [numero de partido] - Para bajarte de un partido \n"
 	response += emojiHelp + " /ayuda - Muestra la lista de comandos disponibles"
 	msg := tgbotapi.NewMessage(message.Chat.ID, response)
 	bot.Send(msg)
@@ -359,6 +554,20 @@ func contains(slice []int, item int) bool {
 		}
 	}
 	return false
+}
+
+func remove(slice []int, value int) []int {
+	index := -1
+	for i, v := range slice {
+		if v == value {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return slice
+	}
+	return append(slice[:index], slice[index+1:]...)
 }
 
 func getMaxPlayersByTamano(tamano string) (int, error) {

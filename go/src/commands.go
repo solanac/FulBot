@@ -116,14 +116,14 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 				playerCount := len(game.Players)
 				response = "Partido " + strconv.Itoa(gameId) + ":\n"
 
-				if game.Address != nil {
-					response += unicodeBulletPoint + " Direccion: " + strings.Join(game.Date, " ") + "\n"
+				if game.Date != nil {
+					response += "\n    - Fecha: " + strings.Join(game.Date, " ")
 				}
 				if game.Schedule != nil {
-					response += unicodeBulletPoint + " Horario: " + strings.Join(game.Schedule, " ") + "\n"
+					response += "\n    - Horario: " + strings.Join(game.Schedule, " ")
 				}
-				if game.Date != nil {
-					response += unicodeBulletPoint + " Fecha: " + strings.Join(game.Date, " ") + "\n"
+				if game.Address != nil {
+					response += "\n    - Direccion: " + strings.Join(game.Address, " ")
 				}
 				response += "\n" + "Jugadores:" + "\n"
 

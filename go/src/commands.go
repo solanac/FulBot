@@ -6,10 +6,12 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
+var mutex sync.Mutex
 var games map[int]Game = make(map[int]Game)
 var nextGameId = 1
 
@@ -26,6 +28,8 @@ func getCommands() map[string]CommandHandlerFunc {
 		"agregarhorario":   handleAgregarHorarioCommand,
 		"cancelarpartido":  handleCancelarPartidoCommand,
 		"darsedebaja":      handleDarseDeBajaCommand,
+		"agregarinvitado":  handleAgregrarInvitadoCommand,
+		"bajarinvitado":    handleBajarInvitadoCommand,
 		"ayuda":            handleayudaCommand,
 	}
 }
@@ -37,6 +41,68 @@ func getCommands() map[string]CommandHandlerFunc {
 #                                                            #
 ##############################################################
 */
+func handleBajarInvitadoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	params := getCommandParams(message)
+	var response string
+
+	if len(params) < 1 || params[0] == "" {
+		response = fmt.Sprintf("Para dar de baja a un invitado @%s, debes proporcionar el numero del partido y el nombre. Ejemplo: /bajarinivitado \\[numero] \\[nombre]", message.From.FirstName)
+	} else {
+		gameId, err := strconv.Atoi(params[0])
+		if err != nil {
+			response = params[0] + " no es un numero de partido valido."
+		} else {
+			game, exists := games[gameId]
+			if !exists || !game.Active {
+				response = fmt.Sprintf("No hay un partido pendiente con ese numero, @%s.", message.From.FirstName)
+			} else {
+				playerName := strings.Join(params[1:], " ")
+				if !containsString(game.Guests, playerName) {
+					response = fmt.Sprintf("No es posible dar de baja a %s. No se encuentra en el partido.", playerName)
+				} else {
+					game.Guests = removeString(game.Guests, playerName)
+					updateGame(gameId, game)
+					response = fmt.Sprintf("@%s diste de baja a %s.", message.From.FirstName, playerName)
+				}
+			}
+		}
+
+	}
+
+	respondToMessage(message, response)
+}
+func handleAgregrarInvitadoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	params := getCommandParams(message)
+	var response string
+
+	if len(params) < 1 || params[0] == "" {
+		response = fmt.Sprintf("Para agregar a un tercero @%s, debes proporcionar el numero del partido y el nombre del jugador. Ejemplo: /agregarinvitado [numero] [nombre]", message.From.FirstName)
+	} else {
+		gameId, err := strconv.Atoi(params[0])
+		if err != nil {
+			response = params[0] + "no es un numero de partido valido"
+		} else {
+			game, exists := games[gameId]
+			if !exists || !game.Active {
+				response = fmt.Sprintf("No hay un partido pendiente con ese numero, @%s.", message.From.FirstName)
+			} else if len(params) < 2 || params[1] == "" {
+				response = fmt.Sprintf("@%s debes agregar el nombre del jugador! Ejemplo: /agregartercero [numero] [nombre]", message.From.FirstName)
+			} else {
+				playerName := strings.Join(params[1:], " ")
+				if game.MaxPlayers > (len(game.Players) + len(game.Guests)) {
+					game.Guests = append(game.Guests, playerName)
+					updateGame(gameId, game)
+					response = fmt.Sprintf("@%s has invitado a %s al partido .", message.From.FirstName, playerName)
+
+				} else {
+					response = fmt.Sprintf("El partido esta completo @%s, no podes invitar a %s", message.From.FirstName, playerName)
+				}
+
+			}
+		}
+	}
+	respondToMessage(message, response)
+}
 
 func handleDarseDeBajaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	params := getCommandParams(message)
@@ -58,11 +124,12 @@ func handleDarseDeBajaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 					response = fmt.Sprintf("No es posible darse de baja, @%s. No te encontras en el partido.", message.From.FirstName)
 				} else {
 					game.Players = remove(game.Players, playerId)
-					games[gameId] = game
+					updateGame(gameId, game)
 					response = fmt.Sprintf("Te has dado de baja, @%s.", message.From.FirstName)
 				}
 			}
 		}
+
 	}
 
 	respondToMessage(message, response)
@@ -83,13 +150,17 @@ func handleYoJuegoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if !exists || !game.Active {
 				response = fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
 			} else {
-				playerID := message.From.ID
-				if !contains(game.Players, playerID) {
-					game.Players = append(game.Players, playerID)
-					games[gameId] = game
-					response = fmt.Sprintf("¡Hola @%s! Te has unido al partido. ¡Buena suerte!", message.From.FirstName)
+				if game.MaxPlayers > (len(game.Players) + len(game.Guests)) {
+					playerID := message.From.ID
+					if !contains(game.Players, playerID) {
+						game.Players = append(game.Players, playerID)
+						updateGame(gameId, game)
+						response = fmt.Sprintf("¡Hola @%s! Te has unido al partido. ¡Buena suerte!", message.From.FirstName)
+					} else {
+						response = fmt.Sprintf("Ya estás en el partido @%s. ¡A jugar!", message.From.FirstName)
+					}
 				} else {
-					response = fmt.Sprintf("Ya estás en el partido @%s. ¡A jugar!", message.From.FirstName)
+					response = fmt.Sprintf("El partido esta completo @%s, no te podes anotar", message.From.FirstName)
 				}
 			}
 		}
@@ -113,7 +184,7 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 			if !exists || !game.Active {
 				response = fmt.Sprintf("No hay un partido pendiente con ese numero, @%s. Puedes iniciar uno nuevo con /nuevopartido", message.From.FirstName)
 			} else {
-				playerCount := len(game.Players)
+
 				response = "Partido " + strconv.Itoa(gameId) + ":\n"
 
 				if game.Date != nil {
@@ -126,14 +197,22 @@ func handleVerPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 					response += "\n    - Direccion: " + strings.Join(game.Address, " ")
 				}
 				response += "\n" + "Jugadores:" + "\n"
-
-				for i, playerID := range game.Players {
+				countPlayers := 0
+				for _, playerID := range game.Players {
 					user := getUserInfo(bot, message.Chat.ID, playerID)
 					if user != nil {
-						response += strconv.Itoa(i+1) + ". " + user.FirstName + " " + user.LastName + "\n"
+						countPlayers++
+						response += strconv.Itoa(countPlayers) + ". " + user.FirstName + " " + user.LastName + "\n"
+
 					}
+
 				}
-				response += "\nTotal de jugadores: " + strconv.Itoa(playerCount) + "/" + strconv.Itoa(game.MaxPlayers)
+				for _, playerName := range game.Guests {
+					countPlayers++
+					response += strconv.Itoa(countPlayers) + ". " + playerName + "\n"
+
+				}
+				response += "\nTotal de jugadores: " + strconv.Itoa(countPlayers) + "/" + strconv.Itoa(game.MaxPlayers)
 			}
 		}
 	}
@@ -191,11 +270,12 @@ func handleNuevoPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 				Id:          nextGameId,
 				Active:      true,
 				Players:     make([]int, 0),
+				Guests:      make([]string, 0),
 				OrganizerID: message.From.ID,
 				Size:        size,
 				MaxPlayers:  maxPlayers,
 			}
-			games[nextGameId] = game
+			updateGame(nextGameId, game)
 			response = "Se ha iniciado un nuevo partido de " + size + ". Puedes unirte al partido con el comando /yojuego " + strconv.Itoa(nextGameId)
 		}
 
@@ -223,7 +303,7 @@ func handleAgregarDireccionCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messa
 			} else {
 				address := params[1:]
 				game.Address = address
-				games[gameId] = game
+				updateGame(gameId, game)
 				response = "Se ha agregado la dirección al partido " + strconv.Itoa(gameId) + "."
 			}
 		}
@@ -250,7 +330,7 @@ func handleAgregarHorarioCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message
 			} else {
 				schedule := params[1:]
 				game.Schedule = schedule
-				games[gameId] = game
+				updateGame(gameId, game)
 				response = "Se ha agregado el horario al partido " + strconv.Itoa(gameId) + "."
 			}
 		}
@@ -277,7 +357,7 @@ func handleAgregarFechaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) 
 			} else {
 				date := params[1:]
 				game.Date = date
-				games[gameId] = game
+				updateGame(gameId, game)
 				response = "Se ha agregado la fecha al partido " + strconv.Itoa(gameId) + "."
 			}
 		}
@@ -303,7 +383,7 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 				response = "Solo el organizador del partido puede cancelarlo."
 			} else {
 				game.Active = false
-				games[gameId] = game
+				updateGame(gameId, game)
 				response = fmt.Sprintf("El partido ha sido cancelado por  @%s.", message.From.FirstName)
 			}
 		}
@@ -313,15 +393,17 @@ func handleCancelarPartidoCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Messag
 
 func handleayudaCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	response := "Los comandos disponibles son:\n\n"
-	response += emojiThumbsUp + " /yojuego [numero de partido] - Únete a un partido\n"
-	response += emojiCalendar + " /verpartido [numero de partido] - Muestra la información de un partido\n"
+	response += emojiThumbsUp + " /yojuego \\[numero de partido] - Únete a un partido\n"
+	response += emojiCalendar + " /verpartido \\[numero de partido] - Muestra la información de un partido\n"
 	response += emojiCalendar + " /verpartidos - Muestra la información de todos los partidos\n"
-	response += emojiBall + " /nuevopartido [tamaño] - Inicia un nuevo partido\n"
-	response += emojiCalendar + " /agregarfecha [numero de partido] [fecha] - Agrega la fecha a un partido\n"
-	response += emojiClock + " /agregarhorario [numero de partido] [horario] - Agrega un horario a un partido\n"
-	response += emojiAddress + " /agregardireccion [numero de partido] [direccion] - Agrega una dirección a un partido\n"
-	response += emojiCross + " /cancelarpartido [numero de partido] -  Cancela un partido, solo la persona que lo creo puede cancelarlo\n"
-	response += emojiThumbsDown + " /darsedebaja [numero de partido] - Para bajarte de un partido \n"
+	response += emojiBall + " /nuevopartido \\[tamaño] - Inicia un nuevo partido\n"
+	response += emojiCalendar + " /agregarfecha \\[numero de partido] \\[fecha] - Agrega la fecha a un partido\n"
+	response += emojiClock + " /agregarhorario \\[numero de partido] \\[horario] - Agrega un horario a un partido\n"
+	response += emojiAddress + " /agregardireccion \\[numero de partido] \\[direccion] - Agrega una dirección a un partido\n"
+	response += emojiCross + " /cancelarpartido \\[numero de partido] -  Cancela un partido, solo la persona que lo creo puede cancelarlo\n"
+	response += emojiThumbsDown + " /darsedebaja \\[numero de partido] - Para bajarte de un partido \n"
+	response += emojiGhost + " /agregarinvitado \\[numero de partido] \\[nombre] - Para agregar a un invitado a un partido \n"
+	response += emojiCross + " /bajarinvitado \\[numero de partido] \\[nombre] - Para dar de baja a un invitado de un partido \n"
 	response += emojiHelp + " /ayuda - Muestra la lista de comandos disponibles"
 	respondToMessage(message, response)
 }
@@ -361,6 +443,28 @@ func contains(slice []int, item int) bool {
 	return false
 }
 
+func containsString(slice []string, item string) bool {
+	for _, i := range slice {
+		if i == item {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, value string) []string {
+	index := -1
+	for i, v := range slice {
+		if v == value {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return slice
+	}
+	return append(slice[:index], slice[index+1:]...)
+}
 func remove(slice []int, value int) []int {
 	index := -1
 	for i, v := range slice {
@@ -396,4 +500,10 @@ func respondToMessage(originalMessage *tgbotapi.Message, messageToSend string) {
 	msg.ReplyToMessageID = originalMessage.MessageID
 	msg.ParseMode = "Markdown"
 	bot.Send(msg)
+}
+func updateGame(gameId int, game Game) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	games[gameId] = game
+
 }
